@@ -5,6 +5,12 @@
             "args": [
                 "C:/Users/navan/Desktop/NK/VS/Projects/crypto_mcp/test_mcp/server.py"
             ]
+        },
+        "crypto_mcp": {
+            "command": "python",
+            "args": [
+                "C:/Users/navan/Desktop/NK/VS/Projects/crypto_mcp/crypto_mcp/crypto_server.py"
+            ]
         }
     }
 }
