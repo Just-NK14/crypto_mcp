@@ -30,12 +30,15 @@ MarkupSafe==3.0.2
 mcp==1.13.1
 mdurl==0.1.2
 more-itertools==10.7.0
+narwhals==2.2.0
 openapi-core==0.19.5
 openapi-pydantic==0.5.1
 openapi-schema-validator==0.6.3
 openapi-spec-validator==0.7.2
+packaging==25.0
 parse==1.20.2
 pathable==0.4.4
+plotly==6.3.0
 pycparser==2.22
 pydantic==2.11.7
 pydantic-settings==2.10.1

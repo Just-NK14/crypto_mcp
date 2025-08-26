@@ -1,5 +1,8 @@
 from fastmcp import FastMCP
 from typing import Optional
+import plotly.graph_objects as go
+from datetime import datetime
+import time
 import requests
 
 
@@ -86,6 +89,52 @@ def get_crypto_price(
 
     return response.json()
 
+@mcp.tool
+def plot_crypto_price_history(symbol: str, days: int) -> str:
+    """
+    Fetches and displays the historical price of a cryptocurrency for a given number of days.
+    This will open the plot in a new browser tab.
+    Args:
+        symbol: The cryptocurrency symbol (e.g., "BTC", "ETH").
+        days: The number of past days of historical data to plot.
+    Returns:
+        A success message.
+    """
+    if not COIN_LIST_CACHE:
+        raise ValueError("The coin list is not available.")
+    coin_id = COIN_LIST_CACHE.get(symbol.lower())
+    if not coin_id:
+        raise ValueError(f"Cryptocurrency with symbol '{symbol}' not found.")
+
+    try:
+        api_url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart?vs_currency=usd&days={days}"
+        response = requests.get(api_url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+
+        prices = data.get('prices', [])
+        if not prices:
+            return f"No price data found for {symbol} for the last {days} days."
+        
+        timestamps = [datetime.fromtimestamp(p[0] / 1000) for p in prices]
+        price_values = [p[1] for p in prices]
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=timestamps, y=price_values, mode='lines', name='Price (USD)'))
+        fig.update_layout(
+            title=f'Price History of {symbol.upper()} ({days} Days)',
+            xaxis_title='Date',
+            yaxis_title='Price (USD)',
+            template='plotly_dark'
+        )
+
+        # This line will now automatically open a new browser tab with the plot
+        fig.show()
+        
+        return "Success! The plot should have opened in a new browser tab."
+
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"An error occurred while fetching chart data: {e}")
 
 if __name__ == "__main__":
     # Load the coin list into memory before starting the server
