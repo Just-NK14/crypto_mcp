@@ -92,49 +92,124 @@ def get_crypto_price(
 @mcp.tool
 def plot_crypto_price_history(symbol: str, days: int) -> str:
     """
-    Fetches and displays the historical price of a cryptocurrency for a given number of days.
-    This will open the plot in a new browser tab.
+    Fetches, plots, and displays the historical price of a cryptocurrency
+    with a professional line chart on a dark background.
+
     Args:
-        symbol: The cryptocurrency symbol (e.g., "BTC", "ETH").
-        days: The number of past days of historical data to plot.
+        symbol: Cryptocurrency symbol (e.g., "BTC").
+        days: Number of past days of historical data.
+
     Returns:
-        A success message.
+        Success message when plot is displayed.
     """
     if not COIN_LIST_CACHE:
-        raise ValueError("The coin list is not available.")
+        raise ValueError("Coin list is not loaded.")
+
     coin_id = COIN_LIST_CACHE.get(symbol.lower())
     if not coin_id:
-        raise ValueError(f"Cryptocurrency with symbol '{symbol}' not found.")
+        raise ValueError(f"Cryptocurrency '{symbol}' not found.")
 
     try:
-        api_url = f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart?vs_currency=usd&days={days}"
-        response = requests.get(api_url, timeout=10)
-        response.raise_for_status()
-        data = response.json()
+        # Fetch coin details for logo and full name
+        details = requests.get(
+            f"https://api.coingecko.com/api/v3/coins/{coin_id}", timeout=5).json()
+        logo_url = details.get('image', {}).get('large')
+        coin_name = details.get('name', symbol.upper())
 
-        prices = data.get('prices', [])
+        # Fetch historical price data
+        chart_data = requests.get(
+            f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart",
+            params={"vs_currency": "usd", "days": days}, timeout=10
+        ).json()
+
+        prices = chart_data.get('prices', [])
         if not prices:
-            return f"No price data found for {symbol} for the last {days} days."
-        
-        timestamps = [datetime.fromtimestamp(p[0] / 1000) for p in prices]
+            return f"No price data found for {symbol} for last {days} days."
+
+        timestamps = [datetime.fromtimestamp(p[0]/1000) for p in prices]
         price_values = [p[1] for p in prices]
 
+        # Find min and max points
+        min_price = min(price_values)
+        max_price = max(price_values)
+        min_index = price_values.index(min_price)
+        max_index = price_values.index(max_price)
+
+        # Create line plot
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=timestamps, y=price_values, mode='lines', name='Price (USD)'))
+        fig.add_trace(go.Scatter(
+            x=timestamps,
+            y=price_values,
+            mode='lines+markers',
+            line=dict(color="#00cc96", width=1),
+            marker=dict(size=2),
+            name="Price",
+            hovertemplate="%{x|%b %d, %Y}<br>Price: $%{y:,.2f}<extra></extra>"
+        ))
+
+        # Highlight min and max points
+        fig.add_trace(go.Scatter(
+            x=[timestamps[min_index], timestamps[max_index]],
+            y=[min_price, max_price],
+            mode='markers+text',
+            marker=dict(color="red", size=5, symbol="circle"),
+            text=[f"Min: ${min_price:,.2f}", f"Max: ${max_price:,.2f}"],
+            textposition="top center",
+            showlegend=False
+        ))
+
+        # Layout improvements with dark theme
         fig.update_layout(
-            title=f'Price History of {symbol.upper()} ({days} Days)',
-            xaxis_title='Date',
-            yaxis_title='Price (USD)',
-            template='plotly_dark'
+            title=dict(
+                text=f"Price History of {symbol.upper()}",
+                x=0.5,
+                xanchor='center',
+                yanchor='top',
+                font=dict(family="Arial", size=22, color="white")
+            ),
+            xaxis=dict(
+                title="Date",
+                showgrid=True,
+                gridcolor='gray',
+                tickangle=-45,
+                showline=True,
+                linewidth=1,
+                linecolor='white',
+                color='white'
+            ),
+            yaxis=dict(
+                title="Price (USD)",
+                showgrid=True,
+                gridcolor='gray',
+                tickformat="$,.2f",
+                showline=True,
+                linewidth=1,
+                linecolor='white',
+                color='white'
+            ),
+            template="plotly_dark",
+            font=dict(family="Arial", size=12, color="white"),
+            margin=dict(l=70, r=40, t=100, b=70)
         )
 
-        # This line will now automatically open a new browser tab with the plot
+        # Add logo in top-left
+        if logo_url:
+            fig.add_layout_image(
+                dict(
+                    source=logo_url,
+                    xref="paper", yref="paper",
+                    x=0, y=1,
+                    sizex=0.08, sizey=0.08,
+                    xanchor="left", yanchor="top",
+                    layer="above"
+                )
+            )
+
         fig.show()
-        
-        return "Success! The plot should have opened in a new browser tab."
+        return "Success! The plot has been displayed."
 
     except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"An error occurred while fetching chart data: {e}")
+        raise RuntimeError(f"Error fetching data: {e}")
 
 if __name__ == "__main__":
     # Load the coin list into memory before starting the server
