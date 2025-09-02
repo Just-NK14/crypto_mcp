@@ -287,6 +287,70 @@ def plot_crypto_price_history(symbol: str, days: int) -> str:
     except requests.exceptions.RequestException as e:
         raise RuntimeError(f"Error fetching data: {e}")
 
+@mcp.tool()
+def get_top_gainers_losers(
+    vs_currency="usd",
+    top_n=5,
+    category="both",
+    per_page=250,
+    page=1,
+    price_change_period="24h"
+):
+    """
+    Fetch top gainers and/or losers in the crypto market.
+
+    Args:
+        vs_currency (str): Currency to compare prices against (default "usd").
+        top_n (int): Number of top gainers/losers to return (default 5).
+        category (str): "gainers", "losers", or "both" (default "both").
+        per_page (int): Number of coins to fetch per page from CoinGecko (default 250).
+        page (int): Page number to fetch (default 1).
+        price_change_period (str): Period for price change: "1h", "24h", "7d" (default "24h").
+
+    Returns:
+        dict: Contains requested data based on category.
+    """
+    url = "https://api.coingecko.com/api/v3/coins/markets"
+    params = {
+        "vs_currency": vs_currency,
+        "order": "market_cap_desc",
+        "per_page": per_page,
+        "page": page,
+        "price_change_percentage": price_change_period
+    }
+
+    data = requests.get(url, params=params).json()
+
+    # Ensure top_n doesn't exceed the fetched data length
+    top_n = min(top_n, len(data))
+
+    # Sort by chosen price change period
+    key_name = f"price_change_percentage_{price_change_period}"
+    sorted_data = sorted(data, key=lambda x: x.get(key_name, 0), reverse=True)
+
+    gainers = sorted_data[:top_n]
+    losers = sorted_data[-top_n:]
+
+    def format_list(coin_list):
+        return [
+            {
+                "name": c["name"],
+                "symbol": c["symbol"],
+                "price": c["current_price"],
+                "change": round(c.get(key_name, 0), 2)
+            }
+            for c in coin_list
+        ]
+
+    if category == "gainers":
+        return {"gainers": format_list(gainers)}
+    elif category == "losers":
+        return {"losers": format_list(losers[::-1])}  # biggest negative change first
+    else:
+        return {
+            "gainers": format_list(gainers),
+            "losers": format_list(losers[::-1])
+        }
 
 load_coin_list()
 mcp.run(transport="stdio")
