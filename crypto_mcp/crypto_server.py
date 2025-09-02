@@ -93,7 +93,8 @@ def get_crypto_price(
 def plot_crypto_price_history(symbol: str, days: int) -> str:
     """
     Fetches, plots, and displays the historical price of a cryptocurrency
-    with a professional line chart on a dark background.
+    with an interactive toggle between line and candlestick chart.
+    Candles gracefully fall back to aggregated OHLC when /ohlc doesn't support the 'days' value.
 
     Args:
         symbol: Cryptocurrency symbol (e.g., "BTC").
@@ -110,62 +111,137 @@ def plot_crypto_price_history(symbol: str, days: int) -> str:
         raise ValueError(f"Cryptocurrency '{symbol}' not found.")
 
     try:
-        # Fetch coin details for logo and full name
+        # Fetch coin details (logo, name)
         details = requests.get(
-            f"https://api.coingecko.com/api/v3/coins/{coin_id}", timeout=5).json()
+            f"https://api.coingecko.com/api/v3/coins/{coin_id}", timeout=5
+        ).json()
         logo_url = details.get('image', {}).get('large')
         coin_name = details.get('name', symbol.upper())
 
-        # Fetch historical price data
+        # Fetch line data (works for any days)
         chart_data = requests.get(
             f"https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart",
-            params={"vs_currency": "usd", "days": days}, timeout=10
+            params={"vs_currency": "usd", "days": days},
+            timeout=10
         ).json()
 
         prices = chart_data.get('prices', [])
         if not prices:
             return f"No price data found for {symbol} for last {days} days."
 
-        timestamps = [datetime.fromtimestamp(p[0]/1000) for p in prices]
-        price_values = [p[1] for p in prices]
+        ts_line = [datetime.fromtimestamp(p[0] / 1000) for p in prices]
+        val_line = [p[1] for p in prices]
 
-        # Find min and max points
-        min_price = min(price_values)
-        max_price = max(price_values)
-        min_index = price_values.index(min_price)
-        max_index = price_values.index(max_price)
+        # Try OHLC endpoint first if 'days' supported; else aggregate from prices
+        supported_ohlc_days = {1, 7, 14, 30, 90, 180, 365}
+        have_real_ohlc = False
+        ohlc_x, ohlc_o, ohlc_h, ohlc_l, ohlc_c = [], [], [], [], []
 
-        # Create line plot
+        if isinstance(days, int) and days in supported_ohlc_days:
+            ohlc_resp = requests.get(
+                f"https://api.coingecko.com/api/v3/coins/{coin_id}/ohlc",
+                params={"vs_currency": "usd", "days": days},
+                timeout=10
+            ).json()
+            if isinstance(ohlc_resp, list) and ohlc_resp:
+                have_real_ohlc = True
+                ohlc_x = [datetime.fromtimestamp(p[0] / 1000) for p in ohlc_resp]
+                ohlc_o = [p[1] for p in ohlc_resp]
+                ohlc_h = [p[2] for p in ohlc_resp]
+                ohlc_l = [p[3] for p in ohlc_resp]
+                ohlc_c = [p[4] for p in ohlc_resp]
+
+        if not have_real_ohlc:
+            # Fallback: aggregate /market_chart prices into daily candles
+            # Group by calendar day; open=first, high=max, low=min, close=last
+            buckets = {}
+            for t, price in zip(ts_line, val_line):
+                day_key = datetime(t.year, t.month, t.day)
+                if day_key not in buckets:
+                    buckets[day_key] = {
+                        "open": price, "high": price, "low": price, "close": price
+                    }
+                else:
+                    b = buckets[day_key]
+                    b["high"] = max(b["high"], price)
+                    b["low"] = min(b["low"], price)
+                    b["close"] = price
+
+            # Sort by date
+            sorted_days = sorted(buckets.keys())
+            # If user asks for N days, keep at most last N daily buckets
+            if isinstance(days, int) and len(sorted_days) > days:
+                sorted_days = sorted_days[-days:]
+
+            ohlc_x = sorted_days
+            ohlc_o = [buckets[d]["open"] for d in sorted_days]
+            ohlc_h = [buckets[d]["high"] for d in sorted_days]
+            ohlc_l = [buckets[d]["low"] for d in sorted_days]
+            ohlc_c = [buckets[d]["close"] for d in sorted_days]
+
+            # If for some reason we couldn't build candles (e.g., only 1 point), just skip
+            if len(ohlc_x) < 2:
+                # We'll still show the line chart; candlestick toggle will be disabled visually (no data)
+                pass
+
+        # Build figure
         fig = go.Figure()
+
+        # Line trace
         fig.add_trace(go.Scatter(
-            x=timestamps,
-            y=price_values,
-            mode='lines+markers',
-            line=dict(color="#00cc96", width=1),
-            marker=dict(size=2),
-            name="Price",
-            hovertemplate="%{x|%b %d, %Y}<br>Price: $%{y:,.2f}<extra></extra>"
+            x=ts_line,
+            y=val_line,
+            mode='lines',
+            line=dict(color="#00cc96", width=1.5),
+            name="Line Chart",
+            hovertemplate="%{x|%b %d, %Y %H:%M}<br>Price: $%{y:,.2f}<extra></extra>",
+            visible=True
         ))
 
-        # Highlight min and max points
-        fig.add_trace(go.Scatter(
-            x=[timestamps[min_index], timestamps[max_index]],
-            y=[min_price, max_price],
-            mode='markers+text',
-            marker=dict(color="red", size=5, symbol="circle"),
-            text=[f"Min: ${min_price:,.2f}", f"Max: ${max_price:,.2f}"],
-            textposition="top center",
-            showlegend=False
+        # Candlestick trace (only if we have 2+ candles)
+        have_candles = len(ohlc_x) >= 2
+        fig.add_trace(go.Candlestick(
+            x=ohlc_x,
+            open=ohlc_o,
+            high=ohlc_h,
+            low=ohlc_l,
+            close=ohlc_c,
+            name="Candlestick",
+            visible=False if have_candles else False,
+            hoverlabel=dict(namelength=-1)
         ))
 
-        # Layout improvements with dark theme
         fig.update_layout(
+            updatemenus=[
+                dict(
+                    type="buttons",
+                    direction="down",
+                    x=1.05, y=1,
+                    buttons=list([
+                        dict(
+                            label="Line",
+                            method="update",
+                            args=[{"visible": [True, False]}],
+                            args2=[{"visible": [True, False]}]  
+                        ),
+                        dict(
+                            label="Candle" + ("" if have_candles else " (N/A)"),
+                            method="update",
+                            args=[{"visible": [False, True]}],
+                            args2=[{"visible": [False, True]}]
+                        ),
+                    ]),
+                    showactive=True,
+                    bgcolor="grey",
+                    bordercolor="black",
+                    borderwidth=1,
+                    font=dict(color="black", size=13)
+                )
+            ],
             title=dict(
-                text=f"Price History of {symbol.upper()}",
+                text=f"Price History of {coin_name} ({symbol.upper()})",
                 x=0.5,
-                xanchor='center',
-                yanchor='top',
-                font=dict(family="Arial", size=22, color="white")
+                font=dict(size=22, color="white")
             ),
             xaxis=dict(
                 title="Date",
@@ -192,7 +268,7 @@ def plot_crypto_price_history(symbol: str, days: int) -> str:
             margin=dict(l=70, r=40, t=100, b=70)
         )
 
-        # Add logo in top-left
+        # Logo in top-left
         if logo_url:
             fig.add_layout_image(
                 dict(
@@ -206,12 +282,11 @@ def plot_crypto_price_history(symbol: str, days: int) -> str:
             )
 
         fig.show()
-        return "Success! The plot has been displayed."
+        return "Success! The plot with robust candlesticks has been displayed."
 
     except requests.exceptions.RequestException as e:
         raise RuntimeError(f"Error fetching data: {e}")
 
-if __name__ == "__main__":
-    # Load the coin list into memory before starting the server
-    load_coin_list()
-    mcp.run(transport="stdio")
+
+load_coin_list()
+mcp.run(transport="stdio")
