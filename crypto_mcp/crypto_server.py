@@ -352,5 +352,48 @@ def get_top_gainers_losers(
             "losers": format_list(losers[::-1])
         }
 
+@mcp.tool()
+def get_coin_details(coin_id):
+    """
+    Fetch detailed coin information, including profile, market rank, category,
+    description, website, logo, and social stats.
+
+    Args:
+        coin_id (str): CoinGecko coin ID (e.g., "bitcoin", "ethereum").
+
+    Returns:
+        dict: Detailed coin info.
+    """
+    url = f"https://api.coingecko.com/api/v3/coins/{coin_id}"
+    params = {
+        "localization": "false",
+        "tickers": "false",
+        "market_data": "true",
+        "community_data": "true",
+        "developer_data": "true",
+        "sparkline": "false"
+    }
+
+    data = requests.get(url, params=params).json()
+
+    coin_info = {
+        "name": data.get("name"),
+        "symbol": data.get("symbol"),
+        "market_rank": data.get("market_cap_rank"),
+        "category": data.get("categories", []),
+        "description": data.get("description", {}).get("en", ""),
+        "website": data.get("links", {}).get("homepage", [None])[0],
+        "logo": data.get("image", {}).get("large"),
+        "social": {
+            "twitter_followers": data.get("community_data", {}).get("twitter_followers"),
+            "reddit_subscribers": data.get("community_data", {}).get("reddit_subscribers"),
+            "github_stars": data.get("developer_data", {}).get("stars"),
+            "github_forks": data.get("developer_data", {}).get("forks"),
+            "github_commits_last_4_weeks": data.get("developer_data", {}).get("commit_count_4_weeks")
+        }
+    }
+
+    return coin_info
+
 load_coin_list()
 mcp.run(transport="stdio")
