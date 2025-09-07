@@ -435,5 +435,37 @@ def get_global_market_data(vs_currency: str = "usd") -> dict:
     except requests.exceptions.RequestException as e:
         raise RuntimeError(f"Error fetching global market data: {e}")
 
+@mcp.tool()
+def get_trending_coins() -> dict:
+    """
+    Fetch trending cryptocurrencies based on CoinGecko search popularity.
+
+    Returns:
+        dict: A list of trending coins with name, symbol, market cap rank, and score.
+    """
+    url = "https://api.coingecko.com/api/v3/search/trending"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+
+        trending = []
+        for item in data.get("coins", []):
+            coin = item.get("item", {})
+            trending.append({
+                "name": coin.get("name"),
+                "symbol": coin.get("symbol"),
+                "market_cap_rank": coin.get("market_cap_rank"),
+                "score": coin.get("score"),
+                "id": coin.get("id"),
+                "logo": coin.get("large"),
+                "price_btc": coin.get("price_btc")
+            })
+
+        return {"trending": trending}
+
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"Error fetching trending coins: {e}")
+
 load_coin_list()
 mcp.run(transport="stdio")
