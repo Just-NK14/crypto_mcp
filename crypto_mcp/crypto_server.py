@@ -395,5 +395,45 @@ def get_coin_details(coin_id):
 
     return coin_info
 
+@mcp.tool()
+def get_global_market_data(vs_currency: str = "usd") -> dict:
+    """
+    Fetches the overall cryptocurrency market data (global stats).
+
+    Args:
+        vs_currency (str): The fiat currency to display values in (default: "usd").
+
+    Returns:
+        dict: Contains market cap, volume, dominance, and other stats.
+    """
+    url = "https://api.coingecko.com/api/v3/global"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json().get("data", {})
+
+        global_stats = {
+            "active_cryptocurrencies": data.get("active_cryptocurrencies"),
+            "upcoming_icos": data.get("upcoming_icos"),
+            "ongoing_icos": data.get("ongoing_icos"),
+            "ended_icos": data.get("ended_icos"),
+            "markets": data.get("markets"),
+            "total_market_cap": {
+                vs_currency: round(data.get("total_market_cap", {}).get(vs_currency, 0), 2)
+            },
+            "total_volume": {
+                vs_currency: round(data.get("total_volume", {}).get(vs_currency, 0), 2)
+            },
+            "market_cap_percentage": data.get("market_cap_percentage", {}),
+            "market_cap_change_percentage_24h_usd": round(
+                data.get("market_cap_change_percentage_24h_usd", 0), 2
+            )
+        }
+
+        return global_stats
+
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"Error fetching global market data: {e}")
+
 load_coin_list()
 mcp.run(transport="stdio")
