@@ -467,5 +467,51 @@ def get_trending_coins() -> dict:
     except requests.exceptions.RequestException as e:
         raise RuntimeError(f"Error fetching trending coins: {e}")
 
+@mcp.tool()
+def compare_coins(symbols: list[str], vs_currency: str = "usd") -> list[dict]:
+    """
+    Compare multiple cryptocurrencies by price, market cap, volume, and changes.
+
+    Args:
+        symbols (list[str]): List of crypto symbols (e.g., ["BTC", "ETH", "ADA"]).
+        vs_currency (str): Fiat currency for comparison (default "usd").
+
+    Returns:
+        list[dict]: Comparison table of coins.
+    """
+    if not COIN_LIST_CACHE:
+        raise ValueError("Coin list not loaded.")
+
+    ids = []
+    for sym in symbols:
+        coin_id = COIN_LIST_CACHE.get(sym.lower())
+        if coin_id:
+            ids.append(coin_id)
+        else:
+            raise ValueError(f"Symbol '{sym}' not found.")
+
+    url = "https://api.coingecko.com/api/v3/coins/markets"
+    params = {
+        "vs_currency": vs_currency,
+        "ids": ",".join(ids),
+        "price_change_percentage": "1h,24h,7d"
+    }
+
+    data = requests.get(url, params=params).json()
+
+    return [
+        {
+            "name": c["name"],
+            "symbol": c["symbol"].upper(),
+            "price": c["current_price"],
+            "market_cap": c["market_cap"],
+            "volume": c["total_volume"],
+            "change_1h": round(c.get("price_change_percentage_1h_in_currency", 0), 2),
+            "change_24h": round(c.get("price_change_percentage_24h_in_currency", 0), 2),
+            "change_7d": round(c.get("price_change_percentage_7d_in_currency", 0), 2),
+        }
+        for c in data
+    ]
+
 load_coin_list()
 mcp.run(transport="stdio")
